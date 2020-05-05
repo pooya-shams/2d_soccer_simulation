@@ -2,7 +2,22 @@ import math
 import random
 from math import sin, cos, radians, sqrt
 from runner.settings import FRICTION, SCREEN_WIDTH as SW, SCREEN_HEIGHT as SH
-from runner.settings import BALL_RADIUS
+from runner.settings import BALL_RADIUS, ALLOWED_PLAYERS_AROUND_BALL_RADIUS
+
+
+def near_ball(player, ball):
+    if get_distance(player, ball) <= ALLOWED_PLAYERS_AROUND_BALL_RADIUS:
+        return True
+    return False
+
+
+def players_near_ball(players, player_number, ball):
+    for player in players:
+        if player["number"] == player_number:
+            continue
+        if near_ball(player, ball):
+            return True
+    return False
 
 
 def move(decisions, player_number, destination, speed):
@@ -213,7 +228,7 @@ def predict_ball(ball, players, enemies, iterations=1):
 
 def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
     decisions = []
-    ######################################################################################
+    ###########################################################################
     red = "red"
     blue = "blue"
     white = "white"
@@ -231,8 +246,8 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
     ball_speed = ball["speed"]
     ball_dir = ball["direction"]
     go_poses = [{'x': -436, 'y': 0},
-                {'x': -450, 'y': 60},
                 {'x': -450, 'y': -60},
+                {'x': -450, 'y': 60},
                 enemie_goal_mean,
                 enemie_goal_max,
                 enemie_goal_min]
@@ -242,9 +257,21 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
     distance_for_defence_x_s = [-300, -300, -300]
     distance_for_defence_y_abs = 162.5
     # movement_error = 30
-    max_speed = 18
+    max_speed = 10
     max_power = 60
     # er = 10
+
+    def do_move(decisions, i, destination, speed=max_speed):
+        speed = min(speed, max_speed)
+        if near_ball(destination, ball):
+            if players_near_ball(players, i, ball):
+                return
+        move(decisions, i, destination, speed)
+
+    def move_to_ball(decisions, i, speed):
+        if not players_near_ball(players, i, ball):
+            do_move(decisions, i, ball, speed)
+
     # firts do the defend (players 0 ~ 2)
     for i in range(3):
         p = players[i]
@@ -295,31 +322,30 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                         kick(decisions, i, get_direction(
                             players[i], players[j]), max_power)
                 elif dpb < distances_for_players[i] + max_speed:
-                    move(decisions, i, ball, max_speed)
+                    move_to_ball(decisions, i, max_speed)
                     grab(decisions, i)
                     j = search_for_good_teammate(
                         players, enemies, i, ball, [0, 1, 2])
                     kick(decisions, i, get_direction(
                         players[i], players[j]), max_power)
                 else:
-                    speed = min(get_distance(p, b), max_speed)
-                    move(decisions, i, b, speed)
+                    do_move(decisions, i, b, get_distance(p, b))
                     grab(decisions, i)
                     j = search_for_good_teammate(
                         players, enemies, i, ball, [0, 1, 2])
                     kick(decisions, i, get_direction(
                         players[i], players[j]), max_power)
             elif distances_for_players[i] < dpb + max_speed:
-                move(decisions, i, b, max_speed)
+                do_move(decisions, i, b, max_speed)
                 grab(decisions, i)
                 j = search_for_good_teammate(
                     players, enemies, i, ball, [0, 1, 2])
                 kick(decisions, i, get_direction(
                     players[i], players[j]), max_power)
             else:
-                move(decisions, i, go_poses[i], max_speed)
+                do_move(decisions, i, go_poses[i])
         else:
-            move(decisions, i, go_poses[i], max_speed)
+            do_move(decisions, i, go_poses[i])
     # now lets attask!
     # but waht should we do?
     # go near the goal and goal a goal?
@@ -341,12 +367,12 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                     elif 0.0 <= ball_dir <= 6.0:
                         grab(decisions, i)
             else:  # we can not grab the ball so we will move through it
-                move(decisions, i, ball, min(get_distance(p, ball), max_speed))
+                move_to_ball(decisions, i, get_distance(p, ball))
         # elif ball_number not in [3, 4, 5]: # the ball is grabbed by the defenders
         #    move(decisions, i, ball, min(get_distance(p, ball), max_speed))
         #    kick(decisions, ball_number, get_direction(players[ball_number], enemie_goal_mean), max_power)
         elif ball_number != i:  # the ball is grabbed by attacker but not us
-            move(decisions, i, go_poses[i], max_speed)
+            do_move(decisions, i, go_poses[i])
         else:  # the ball is grabbed by us (attackers)
             dmean = get_distance(p, enemie_goal_mean)
             dmin = get_distance(p, enemie_goal_min)
@@ -389,9 +415,9 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                     index = min_index(lis)+3
                     npos = go_poses[index]
                     if non_of_enemies_on_line(p, npos, enemies):
-                        move(decisions, i, npos, max_speed)
+                        do_move(decisions, i, npos)
                     elif non_of_enemies_on_line(p, pos, enemies):  # pass the ball
-                        move(decisions, i, pos, max_speed)
+                        do_move(decisions, i, pos)
                     else:
                         pos = go_poses[j]
                         djmean = get_distance(pj, enemie_goal_mean)
@@ -405,19 +431,19 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                             kick(decisions, i, get_direction(
                                 p, pj), min(d, max_power))
                             grab(decisions, j)
-                            move(decisions, j, npos, max_speed)
+                            do_move(decisions, j, npos)
                         elif non_of_enemies_on_line(pj, pos, enemies):
                             d = get_distance(p, pj)
                             kick(decisions, i, get_direction(
                                 p, pj), min(d, max_power))
                             grab(decisions, j)
-                            move(decisions, j, pos, max_speed)
+                            do_move(decisions, j, pos)
                         else:
                             yy = 0
                             if py == yy:
                                 yy = py + random.randint(-18, 18)
                             des = {'x': px, 'y': yy}
-                            move(decisions, i, des, max_speed)
+                            do_move(decisions, i, des)
                 else:  # pass the ball
                     d = get_distance(p, pj)
                     kick(decisions, i, get_direction(p, pj), min(d, max_power))
@@ -430,7 +456,7 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
             if ball_number == i:
                 if get_distance(p, pos) > distance_from_goal:  # we can't kick the ball
                     if non_of_enemies_on_line(p, pos, enemies) and not any_enemies_near(p, enemies):
-                        move(decisions, i, pos, max_speed)
+                        do_move(decisions, i, pos)
                     else:
                         k = search_for_forward_teammate(
                             players, enemies, i, ball, [0, 1, 2])
@@ -442,11 +468,11 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                                 kick(decisions, i, direction,
                                      min(distance, max_power))
                                 continue
-                        move(decisions, i, pos, max_speed)
+                        do_move(decisions, i, pos)
                 else:  # we can kick the ball (to where?)
                     kick(decisions, i, get_direction(p, pos), max_power)
                 continue
-        move(decisions, i, ball, max_speed)
+        do_move(decisions, i, ball)
         grab(decisions, i)
-    ######################################################################################
+    ###########################################################################
     return decisions
