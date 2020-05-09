@@ -1,12 +1,25 @@
 import math
 import random
-from math import sin, cos, radians, sqrt
+from math import sin, cos, radians, sqrt, atan2, degrees
 from runner.settings import FRICTION, SCREEN_WIDTH as SW, SCREEN_HEIGHT as SH
 from runner.settings import BALL_RADIUS, ALLOWED_PLAYERS_AROUND_BALL_RADIUS
 
 
 class going_near_ball:
     value = False
+
+
+class has_moved:
+    value = [False] * 6
+
+
+def out_of_screen(point):
+    x = point['x']
+    y = point['y']
+    if not (-SW // 2 < x < SW // 2 and
+            - SH // 2 < y < SH // 2):
+        return False
+    return True
 
 
 def near_ball(player, ball):
@@ -20,8 +33,52 @@ def players_near_ball(players, player_number, ball):
         if player["number"] == player_number:
             continue
         if near_ball(player, ball):
-            return True
-    return False
+            return player["number"]
+    return None
+
+
+def players_are_near_ball(players, player_number, ball):
+    if players_near_ball(players, player_number, ball) is None:
+        return False
+    return True
+
+
+def find_other_head_of_triangle(p2, ball):
+    x1 = p2['x']
+    y1 = p2['y']
+    x2 = ball['x']
+    y2 = ball['y']
+    dis = get_distance(p2, ball)
+    dis2 = dis / 2
+    xm = (x1 + x2) / 2
+    ym = (y1 + y2) / 2
+    h_length2 = (ALLOWED_PLAYERS_AROUND_BALL_RADIUS ** 2) - (dis2 ** 2)
+    if h_length2 < 0:
+        return None
+    h = sqrt(h_length2)
+    alpha = degrees(atan2(y2 - y1, x2 - x1)) % 360
+    beta = 90 - alpha
+    dx = h * cos(radians(beta))
+    dy = h * cos(radians(beta))
+    nx1 = xm + dx
+    ny1 = ym - dy
+    nx2 = xm - dx
+    ny2 = ym + dy
+    return {'x': nx1, 'y': ny1}, {'x': nx2, 'y': ny2}
+
+
+def find_best_head_of_triangle(p1, p2, ball):
+    heads = find_other_head_of_triangle(p2, ball)
+    if heads is None:
+        return None
+    point1 = heads[0]
+    point2 = heads[1]
+    if out_of_screen(point1):
+        return point2
+    elif out_of_screen(point2):
+        return point1
+    else:
+        return min((point1, point2), key=lambda x: get_distance(x, p1))
 
 
 def move(decisions, player_number, destination, speed):
@@ -143,7 +200,8 @@ def search_for_good_teammate(players, enemies, i, ball, not_lis, con2=True) -> (
                 if not any_enemies_near(players[i], enemies, 22):
                     return j
     if con2:
-        return search_for_good_teammate(players, enemies, i, ball, not_lis=not_lis, con2=False)
+        return search_for_good_teammate(players, enemies, i, ball,
+                                        not_lis=not_lis, con2=False)
     return sorted_players[0]
 
 
@@ -268,8 +326,12 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
     # will be set to True when a move will make a player to go near ball
     # this will warn future players not to go near the ball!
     # pretty genious! ha?
+    has_moved.value = [False] * 6
 
     def do_move(decisions, i, destination, speed=max_speed):
+        if has_moved.value[i]:
+            return
+        has_moved.value[i] = True
         speed = min(speed, max_speed)
         player = players[i]
         if player["ban_cycles"] != 0:
@@ -287,14 +349,23 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
             x = player['x'] + ratio * dx
             y = player['y'] + ratio * dy
         destination = {'x': x, 'y': y}
+        players_near_player_detected = players_near_ball(players, i, player)
+        if players_near_player_detected is not None:
+            # checking if there are any players near
+            # the player that may be banned after
+            # a kick near them
+            near_player = players[players_near_player_detected]
+            pos = find_best_head_of_triangle(player, near_player, player)
+            move(decisions, i, pos, min(get_distance(player, pos), max_speed))
         if near_ball(destination, ball):
-            if players_near_ball(players, i, ball) or going_near_ball.value:
+            if players_are_near_ball(players, i, ball) or \
+                    going_near_ball.value:
                 return
             going_near_ball.value = True
         move(decisions, i, destination, speed)
 
     def move_to_ball(decisions, i, speed):
-        if not players_near_ball(players, i, ball):
+        if not players_are_near_ball(players, i, ball):
             do_move(decisions, i, ball, speed)
 
     # firts do the defend (players 0 ~ 2)
@@ -384,35 +455,49 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
             if get_distance(p, ball) < distances_for_players[i]:
                 if ball_color == blue:  # the ball is grabbed by enemies
                     grab(decisions, i)
-                # the ball is opposite us or makes no changes so we should grab it
+                # the ball is opposite us or makes no changes
+                # so we should grab it
                 elif ball_color == white:
-                    if ball_speed == 0:  # the ball is stopped so we had better grab it
+                    if ball_speed == 0:
+                        # the ball is stopped so we had better grab it
                         grab(decisions, i)
-                    # the ball is comming through us! we should stop it so we can attack later!
+                    # the ball is comming through us! we should stop it
+                    # so we can attack later!
                     elif 0.0 <= ball_dir <= 6.0:
                         grab(decisions, i)
             else:  # we can not grab the ball so we will move through it
                 move_to_ball(decisions, i, get_distance(p, ball))
-        # elif ball_number not in [3, 4, 5]: # the ball is grabbed by the defenders
+        # elif ball_number not in [3, 4, 5]:
+        # # the ball is grabbed by the defenders
         #    move(decisions, i, ball, min(get_distance(p, ball), max_speed))
-        #    kick(decisions, ball_number, get_direction(players[ball_number], enemie_goal_mean), max_power)
+        #    kick(decisions, ball_number, get_direction(
+        #        players[ball_number], enemie_goal_mean), max_power)
         elif ball_number != i:  # the ball is grabbed by attacker but not us
-            do_move(decisions, i, go_poses[i])
+            players_near_ball_detected = players_near_ball(players, i, ball)
+            if players_near_ball_detected is None:
+                do_move(decisions, i, go_poses[i])
+            else:
+                near_player = players[players_near_ball_detected]
+                pos = find_best_head_of_triangle(p, near_player, ball)
+                do_move(decisions, i, pos, get_distance(p, pos))
         else:  # the ball is grabbed by us (attackers)
             dmean = get_distance(p, enemie_goal_mean)
             dmin = get_distance(p, enemie_goal_min)
             dmax = get_distance(p, enemie_goal_max)
             # its better to attack through which part of the goal
-            if dmean <= distance_from_goal and non_of_enemies_on_line(p, enemie_goal_mean, enemies):
+            if dmean <= distance_from_goal and \
+                    non_of_enemies_on_line(p, enemie_goal_mean, enemies):
                 kick(decisions, i, get_direction(
                     p, enemie_goal_mean), max_power)
-            elif dmin <= distance_from_goal and non_of_enemies_on_line(p, enemie_goal_min, enemies):
+            elif dmin <= distance_from_goal and \
+                    non_of_enemies_on_line(p, enemie_goal_min, enemies):
                 kick(decisions, i, get_direction(
                     p, enemie_goal_min), max_power)
-            elif dmax <= distance_from_goal and non_of_enemies_on_line(p, enemie_goal_max, enemies):
+            elif dmax <= distance_from_goal and \
+                    non_of_enemies_on_line(p, enemie_goal_max, enemies):
                 kick(decisions, i, get_direction(
                     p, enemie_goal_max), max_power)
-            # non of them are good to go through so we will pass the ball or ...
+            # non of them are good to go through so we will pass the ball or...
             # we shouldn't let the enemies grab the ball!
             elif any_enemies_near(ball, enemies):
                 j = search_for_good_teammate(
@@ -441,7 +526,8 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                     npos = go_poses[index]
                     if non_of_enemies_on_line(p, npos, enemies):
                         do_move(decisions, i, npos)
-                    elif non_of_enemies_on_line(p, pos, enemies):  # pass the ball
+                    elif non_of_enemies_on_line(p, pos, enemies):
+                        # pass the ball
                         do_move(decisions, i, pos)
                     else:
                         pos = go_poses[j]
@@ -480,7 +566,8 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
             pos = poses[random.randint(0, 1)]
             if ball_number == i:
                 if get_distance(p, pos) > distance_from_goal:  # we can't kick the ball
-                    if non_of_enemies_on_line(p, pos, enemies) and not any_enemies_near(p, enemies):
+                    if non_of_enemies_on_line(p, pos, enemies) and \
+                            not any_enemies_near(p, enemies):
                         do_move(decisions, i, pos)
                     else:
                         k = search_for_forward_teammate(
