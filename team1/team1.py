@@ -16,8 +16,7 @@ class has_moved:
 def out_of_screen(point):
     x = point['x']
     y = point['y']
-    if not (-SW // 2 < x < SW // 2 and
-            - SH // 2 < y < SH // 2):
+    if -SW // 2 < x < SW // 2 and -SH // 2 < y < SH // 2:
         return False
     return True
 
@@ -28,17 +27,21 @@ def near_ball(player, ball):
     return False
 
 
-def players_near_ball(players, player_number, ball):
+def players_near_ball(players, player_number, point2, ball, not_owner=False):
     for player in players:
         if player["number"] == player_number:
             continue
-        if near_ball(player, ball):
+        if ball["owner_color"] == "red" and\
+                ball["owner_number"] == player_number and\
+                not_owner:
+            continue
+        if near_ball(player, point2):
             return player["number"]
     return None
 
 
-def players_are_near_ball(players, player_number, ball):
-    if players_near_ball(players, player_number, ball) is None:
+def players_are_near_ball(players, player_number, point2, ball, not_owner=False):
+    if players_near_ball(players, player_number, point2, ball, not_owner) is None:
         return False
     return True
 
@@ -327,6 +330,7 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
     # this will warn future players not to go near the ball!
     # pretty genious! ha?
     has_moved.value = [False] * 6
+    attacker_moving_to_ball = None
 
     def do_move(decisions, i, destination, speed=max_speed):
         if has_moved.value[i]:
@@ -339,6 +343,8 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
         x = 0
         y = 0
         distance = get_distance(player, destination)
+        if distance == 0:
+            return
         if distance < speed:
             x = destination['x']
             y = destination['y']
@@ -349,23 +355,31 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
             x = player['x'] + ratio * dx
             y = player['y'] + ratio * dy
         destination = {'x': x, 'y': y}
-        players_near_player_detected = players_near_ball(players, i, player)
+        players_near_player_detected_not_owner = players_near_ball(
+            players, i, player, ball, not_owner=True)
+        players_near_player_detected = players_near_ball(
+            players, i, player, ball)
         if players_near_player_detected is not None:
             # checking if there are any players near
             # the player that may be banned after
             # a kick near them
             near_player = players[players_near_player_detected]
+            if ball_color == red and \
+                    ball_number == near_player["number"] and \
+                    players_near_player_detected_not_owner is not None:
+                near_player = players[players_near_player_detected_not_owner]
             pos = find_best_head_of_triangle(player, near_player, player)
             move(decisions, i, pos, min(get_distance(player, pos), max_speed))
         if near_ball(destination, ball):
-            if players_are_near_ball(players, i, ball) or \
+            if players_are_near_ball(players, i, ball, ball) or \
                     going_near_ball.value:
                 return
             going_near_ball.value = True
         move(decisions, i, destination, speed)
 
-    def move_to_ball(decisions, i, speed):
-        if not players_are_near_ball(players, i, ball):
+    def move_to_ball(decisions, i):
+        if not players_are_near_ball(players, i, ball, ball):
+            speed = get_distance(players[i], ball)
             do_move(decisions, i, ball, speed)
 
     # firts do the defend (players 0 ~ 2)
@@ -409,35 +423,35 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                     j = search_for_good_teammate(
                         players, enemies, i, ball, [0, 1, 2])
                     kick(decisions, i, get_direction(
-                        players[i], players[j]), max_power)
+                        p, players[j]), max_power)
                 elif dpb < distances_for_players[i]:
                     if ball_color != red:
                         grab(decisions, i)
                         j = search_for_good_teammate(
                             players, enemies, i, ball, [0, 1, 2])
                         kick(decisions, i, get_direction(
-                            players[i], players[j]), max_power)
+                            p, players[j]), max_power)
                 elif dpb < distances_for_players[i] + max_speed:
-                    move_to_ball(decisions, i, max_speed)
+                    move_to_ball(decisions, i)
                     grab(decisions, i)
                     j = search_for_good_teammate(
                         players, enemies, i, ball, [0, 1, 2])
                     kick(decisions, i, get_direction(
-                        players[i], players[j]), max_power)
+                        p, players[j]), max_power)
                 else:
                     do_move(decisions, i, b, get_distance(p, b))
                     grab(decisions, i)
                     j = search_for_good_teammate(
                         players, enemies, i, ball, [0, 1, 2])
                     kick(decisions, i, get_direction(
-                        players[i], players[j]), max_power)
+                        p, players[j]), max_power)
             elif distances_for_players[i] < dpb + max_speed:
                 do_move(decisions, i, b)
                 grab(decisions, i)
                 j = search_for_good_teammate(
                     players, enemies, i, ball, [0, 1, 2])
                 kick(decisions, i, get_direction(
-                    players[i], players[j]), max_power)
+                    p, players[j]), max_power)
             else:
                 do_move(decisions, i, go_poses[i])
         else:
@@ -465,15 +479,32 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                     # so we can attack later!
                     elif 0.0 <= ball_dir <= 6.0:
                         grab(decisions, i)
-            else:  # we can not grab the ball so we will move through it
-                move_to_ball(decisions, i, get_distance(p, ball))
+            else:
+                # we can not grab the ball so we will move through it
+                if ball_x < 0 and px > 0 and ball_color != red:
+                    # we are being attacked! go back to defence!
+                    move_to_ball(decisions, i)
+                elif attacker_moving_to_ball is None:
+                    attacker_moving_to_ball = i
+                else:
+                    # there is someone else going for the ball
+                    attacker = players[attacker_moving_to_ball]
+                    dis_attacker = get_distance(ball, attacker)
+                    dis_us = get_distance(p, ball)
+                    if dis_us < dis_attacker or attacker["ban_cycles"] != 0:
+                        do_move(decisions,
+                                attacker_moving_to_ball,
+                                go_poses[attacker_moving_to_ball])
+                        attacker_moving_to_ball = i
+
         # elif ball_number not in [3, 4, 5]:
         # # the ball is grabbed by the defenders
         #    move(decisions, i, ball, min(get_distance(p, ball), max_speed))
         #    kick(decisions, ball_number, get_direction(
         #        players[ball_number], enemie_goal_mean), max_power)
         elif ball_number != i:  # the ball is grabbed by attacker but not us
-            players_near_ball_detected = players_near_ball(players, i, ball)
+            players_near_ball_detected = players_near_ball(
+                players, i, ball, ball)
             if players_near_ball_detected is None:
                 do_move(decisions, i, go_poses[i])
             else:
@@ -584,7 +615,38 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                 else:  # we can kick the ball (to where?)
                     kick(decisions, i, get_direction(p, pos), max_power)
                 continue
-        do_move(decisions, i, ball)
+        # do_move(decisions, i, ball)
+        if ball_x < 0 and px > 0 and ball_color != red:
+            # we are being attacked! go back to defence!
+            move_to_ball(decisions, i)
+        elif attacker_moving_to_ball is None:
+            attacker_moving_to_ball = i
+        else:
+            attacker = players[attacker_moving_to_ball]
+            dis_attacker = get_distance(ball, attacker)
+            dis_us = get_distance(p, ball)
+            if dis_us < dis_attacker or attacker["ban_cycles"] != 0:
+                do_move(decisions,
+                        attacker_moving_to_ball,
+                        go_poses[attacker_moving_to_ball])
+                attacker_moving_to_ball = i
         grab(decisions, i)
+
+    # moving the chosen attacker to the ball
+    if attacker_moving_to_ball is not None:
+        if ball_color == red:
+            i = attacker_moving_to_ball
+            des = go_poses[i]
+            attacker = players[i]
+            do_move(decisions, i, des, get_distance(attacker, des))
+        else:
+            attacker = players[attacker_moving_to_ball]
+            move_to_ball(decisions, attacker_moving_to_ball)
+
+    for i in range(3, 6):
+        if not has_moved.value[i]:
+            p = players[i]
+            pos = go_poses[i]
+            do_move(decisions, i, pos, get_distance(p, pos))
     ###########################################################################
     return decisions
