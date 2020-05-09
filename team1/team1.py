@@ -5,6 +5,10 @@ from runner.settings import FRICTION, SCREEN_WIDTH as SW, SCREEN_HEIGHT as SH
 from runner.settings import BALL_RADIUS, ALLOWED_PLAYERS_AROUND_BALL_RADIUS
 
 
+class going_near_ball:
+    value = False
+
+
 def near_ball(player, ball):
     if get_distance(player, ball) <= ALLOWED_PLAYERS_AROUND_BALL_RADIUS:
         return True
@@ -260,12 +264,33 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
     max_speed = 10
     max_power = 60
     # er = 10
+    going_near_ball.value = False
+    # will be set to True when a move will make a player to go near ball
+    # this will warn future players not to go near the ball!
+    # pretty genious! ha?
 
     def do_move(decisions, i, destination, speed=max_speed):
         speed = min(speed, max_speed)
+        player = players[i]
+        if player["ban_cycles"] != 0:
+            return
+        x = 0
+        y = 0
+        distance = get_distance(player, destination)
+        if distance < speed:
+            x = destination['x']
+            y = destination['y']
+        else:
+            ratio = speed / distance
+            dx = destination['x'] - player['x']
+            dy = destination['y'] - player['y']
+            x = player['x'] + ratio * dx
+            y = player['y'] + ratio * dy
+        destination = {'x': x, 'y': y}
         if near_ball(destination, ball):
-            if players_near_ball(players, i, ball):
+            if players_near_ball(players, i, ball) or going_near_ball.value:
                 return
+            going_near_ball.value = True
         move(decisions, i, destination, speed)
 
     def move_to_ball(decisions, i, speed):
@@ -336,7 +361,7 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                     kick(decisions, i, get_direction(
                         players[i], players[j]), max_power)
             elif distances_for_players[i] < dpb + max_speed:
-                do_move(decisions, i, b, max_speed)
+                do_move(decisions, i, b)
                 grab(decisions, i)
                 j = search_for_good_teammate(
                     players, enemies, i, ball, [0, 1, 2])
@@ -350,7 +375,7 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
     # but waht should we do?
     # go near the goal and goal a goal?
     # do this by passing the ball?
-    # attack (players 3 ~ 5)
+    # attack (players 4 ~ 5)
     for i in range(4, 6):
         p = players[i]
         px, py = p['x'], p['y']
