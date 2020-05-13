@@ -71,7 +71,7 @@ def find_other_head_of_triangle(p2, ball):
 
 
 def find_best_head_of_triangle(p1, p2, ball):
-    heads = find_other_head_of_triangle(p2, ball)
+    heads = find_other_head_of_triangle(p1, ball)
     if heads is None:
         return None
     point1 = heads[0]
@@ -81,7 +81,7 @@ def find_best_head_of_triangle(p1, p2, ball):
     elif out_of_screen(point2):
         return point1
     else:
-        return min((point1, point2), key=lambda x: get_distance(x, p1))
+        return max((point1, point2), key=lambda x: get_distance(x, p2))
 
 
 def move(decisions, player_number, destination, speed):
@@ -333,18 +333,17 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
     attacker_moving_to_ball = None
 
     def do_move(decisions, i, destination, speed=max_speed):
-        if has_moved.value[i]:
-            return
-        has_moved.value[i] = True
+        # if has_moved.value[i]:
+        #     return
         speed = min(speed, max_speed)
         player = players[i]
+        distance = get_distance(player, destination)
+        if distance == 0:
+            return
         if player["ban_cycles"] != 0:
             return
         x = 0
         y = 0
-        distance = get_distance(player, destination)
-        if distance == 0:
-            return
         if distance < speed:
             x = destination['x']
             y = destination['y']
@@ -354,7 +353,7 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
             dy = destination['y'] - player['y']
             x = player['x'] + ratio * dx
             y = player['y'] + ratio * dy
-        destination = {'x': x, 'y': y}
+        new_destination = {'x': x, 'y': y}
         players_near_player_detected_not_owner = players_near_ball(
             players, i, player, ball, not_owner=True)
         players_near_player_detected = players_near_ball(
@@ -369,13 +368,17 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                     players_near_player_detected_not_owner is not None:
                 near_player = players[players_near_player_detected_not_owner]
             pos = find_best_head_of_triangle(player, near_player, player)
-            move(decisions, i, pos, min(get_distance(player, pos), max_speed))
-        if near_ball(destination, ball):
+            if pos is not None:
+                move(decisions, i, pos, min(get_distance(player, pos), max_speed))
+                has_moved.value[i] = True
+                return
+        if near_ball(new_destination, ball):
             if players_are_near_ball(players, i, ball, ball) or \
                     going_near_ball.value:
                 return
             going_near_ball.value = True
         move(decisions, i, destination, speed)
+        has_moved.value[i] = True
 
     def move_to_ball(decisions, i):
         if not players_are_near_ball(players, i, ball, ball):
@@ -411,13 +414,13 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
                     b['y'] = p2['y'] + \
                         (player_radiuses[i] + player_radiuses[j])
         dpb = get_distance(players[i], ball)
-        near = False
-        if get_distance(ball, players[i]) < near_distance:
-            near = True
+        # near = False
+        # if get_distance(ball, players[i]) < near_distance:
+        #     near = True
         # for j in range(3):
         #    if get_distance(ball, players[j]) < get_distance(ball, players[i]):
         #        near = False
-        if ball_x <= distance_for_defence_x_s[i] and near:
+        if ball_x <= distance_for_defence_x_s[i]:  # and near:
             if -distance_for_defence_y_abs <= ball_y <= distance_for_defence_y_abs:
                 if ball_color == red and ball_number == i:
                     j = search_for_good_teammate(
@@ -510,7 +513,8 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
             else:
                 near_player = players[players_near_ball_detected]
                 pos = find_best_head_of_triangle(p, near_player, ball)
-                do_move(decisions, i, pos, get_distance(p, pos))
+                if pos is not None:
+                    do_move(decisions, i, pos, get_distance(p, pos))
         else:  # the ball is grabbed by us (attackers)
             dmean = get_distance(p, enemie_goal_mean)
             dmin = get_distance(p, enemie_goal_min)
@@ -643,7 +647,7 @@ def play(red_players, blue_players, red_score, blue_score, ball, time_passed):
             attacker = players[attacker_moving_to_ball]
             move_to_ball(decisions, attacker_moving_to_ball)
 
-    for i in range(3, 6):
+    for i in range(0, 6):
         if not has_moved.value[i]:
             p = players[i]
             pos = go_poses[i]
