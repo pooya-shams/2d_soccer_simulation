@@ -14,24 +14,28 @@ from team2.team2 import play as blue_play
 
 def red_fire(red_players, blue_players, red_score, blue_score, ball, time_passed):
     global red_decisions
-    red_decisions = red_play(red_players, blue_players, red_score, blue_score, ball, time_passed)
+    red_decisions = red_play(red_players, blue_players,
+                             red_score, blue_score, ball, time_passed)
 
 
 def blue_fire(red_players, blue_players, red_score, blue_score, ball, time_passed):
     global blue_decisions
-    blue_decisions = blue_play(red_players, blue_players, red_score, blue_score, ball, time_passed)
+    blue_decisions = blue_play(
+        red_players, blue_players, red_score, blue_score, ball, time_passed)
 
 
 if __name__ == "__main__":
     ''' INIT OBJECTS AND VARS '''
     pg.init()
-    screen = pg.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + 2*VERTICAL_MARGIN))
+    screen = pg.display.set_mode(
+        (SCREEN_WIDTH, SCREEN_HEIGHT + 2*VERTICAL_MARGIN), pg.NOFRAME)
     red_players = []
     blue_players = []
     init_players(red_players, blue_players)
     ball = init_ball()
     score_board = ScoreBoard(red_score=0, blue_score=0, cycle_number=0)
-    the_map = Map(red_players=red_players, blue_players=blue_players, ball=ball, score_board=score_board)
+    the_map = Map(red_players=red_players, blue_players=blue_players,
+                  ball=ball, score_board=score_board)
     ''' INIT PYGAME '''
     screen.fill(GRASS_COLOR)
     the_map.show(screen=screen)
@@ -54,7 +58,8 @@ if __name__ == "__main__":
         ''' CREATE AND RUN THREADS '''
         red_decisions = []
         blue_decisions = []
-        red_players_info, blue_players_info, ball_info = get_information_dictionary(red_players, blue_players, ball)
+        red_players_info, blue_players_info, ball_info = get_information_dictionary(
+            red_players, blue_players, ball)
         red_thread = Thread(
             target=red_fire,
             args=(
@@ -67,8 +72,9 @@ if __name__ == "__main__":
             )
         )
         red_players_info, \
-        blue_players_info, \
-        ball_info = reverse_information(red_players_info, blue_players_info, ball_info)
+            blue_players_info, \
+            ball_info = reverse_information(
+                red_players_info, blue_players_info, ball_info)
         blue_thread = Thread(
             target=blue_fire,
             args=(
