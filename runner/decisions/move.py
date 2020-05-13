@@ -27,11 +27,13 @@ class Move(Decision):
     def check_errors(self):
         super().check_errors()
         if not 0 <= self.speed <= PLAYER_SPEED[-1]:
-            raise DecisionException(f'ERROR IN DECISION: Wrong movement speed {self.speed}')
+            raise DecisionException(
+                f'ERROR IN DECISION: Wrong movement speed {self.speed}')
         if not -SCREEN_WIDTH // 2 < self.destination.x < SCREEN_WIDTH // 2 or \
                 not -SCREEN_HEIGHT // 2 < self.destination.y < SCREEN_HEIGHT // 2:
             # raise DecisionException(f'ERROR IN DECISION: Cannot move out of screen')
-            raise DecisionException('ERROR IN DECISION: Cannot move out of screen')
+            raise DecisionException('ERROR IN DECISION: Cannot move out of screen: %s: %s, %s' % (
+                self.player.number, self.destination.x, self.destination.y))
 
     def perform(self):
         self.check_errors()
@@ -40,4 +42,5 @@ class Move(Decision):
             self.player.x = self.destination.x
             self.player.y = self.destination.y
         else:
-            self.player.move(get_direction(self.player, self.destination), self.speed)
+            self.player.move(get_direction(
+                self.player, self.destination), self.speed)
